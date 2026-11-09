@@ -628,8 +628,7 @@ function seed() {
   const photos = [];
   [["c01", 86, 104], ["c02", 83, 102.5], ["c03", 80.5, 101], ["c04", 78.5, 100]].forEach(([cid, w, h], i) => {
     const c = consults.find(x => x.id === cid);
-    photos.push({ id: "ph" + i + "a", pid: "p01", cid, date: c.date, view: "Frente", kind: "gen", waist: w, hip: h, shared: true });
-    photos.push({ id: "ph" + i + "b", pid: "p01", cid, date: c.date, view: "Perfil", kind: "gen", waist: w, hip: h, shared: true });
+    ["Frente", "Espalda", "Perfil derecho", "Perfil izquierdo"].forEach((view, k) => photos.push({ id: "ph" + i + k, pid: "p01", cid, date: c.date, view, kind: "gen", waist: w, hip: h, shared: true, sess: { weight: c.m.weight, waist: w, hip: h } }));
   });
   photos.push({ id: "ph9a", pid: "p02", cid: "c05", date: consults[4].date, view: "Frente", kind: "gen", waist: 92, hip: 101, shared: true, sex: "M" });
   photos.push({ id: "ph9b", pid: "p02", cid: "c06", date: consults[5].date, view: "Frente", kind: "gen", waist: 89.5, hip: 100, shared: true, sex: "M" });
@@ -810,7 +809,7 @@ function buildFromTemplate(t, p) {
 }
 
 /* ---------- estado ---------- */
-const KEY = typeof PERSONAL !== "undefined" ? "pnb-gc-mi-v6" : "pnb-gc-demo-v6";
+const KEY = typeof PERSONAL !== "undefined" ? "pnb-gc-mi-v7" : "pnb-gc-demo-v7";
 let S;
 let DOC_PHOTO = null; try { DOC_PHOTO = localStorage.getItem(KEY + "-photo"); } catch (e) { }
 function load() { try { const r = localStorage.getItem(KEY); if (r) { const d = JSON.parse(r); if (d && d.ver === 4) return d; } } catch (e) { } return seed(); }
@@ -1425,18 +1424,22 @@ function cmpTable(cs, ids) {
   const a = cs.find(c => c.id === ids[0]), b = cs.find(c => c.id === ids[1]);
   return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Medición</th><th class="r">${fmtD(a.date)}</th><th class="r">${fmtD(b.date)}</th><th class="r">Diferencia</th></tr></thead><tbody>${MFIELDS.map(([k, l, u]) => `<tr><td>${l} <span class="faint">${u}</span></td><td class="r mono">${n1(a.m[k])}</td><td class="r mono">${n1(b.m[k])}</td><td class="r mono"><b>${deltaTxt(a.m[k], b.m[k], "") || "—"}</b></td></tr>`).join("")}</tbody></table></div><p class="hint" style="margin-top:8px">${Math.round((dt(b.date) - dt(a.date)) / 864e5)} días entre controles. Diferencias aritméticas, sin interpretación automática.</p>`;
 }
+const PH_VIEWS = ["Frente", "Espalda", "Perfil derecho", "Perfil izquierdo"];
 function fFotos(p) {
   const ph = S.photos.filter(x => x.pid === p.id).sort((a, b) => a.date.localeCompare(b.date));
-  if (!ph.length) return `<div class="empty"><b>Sin fotografías de evolución</b><span>Agrega imágenes ficticias o carga una imagen de prueba.</span><button class="btn primary sm" data-act="addPhoto" data-pid="${p.id}">Agregar fotografía</button></div>`;
-  const views = [...new Set(ph.map(x => x.view))];
+  if (!ph.length) return `<div class="empty"><b>Sin fotografías de evolución</b><span>Carga la primera sesión: una fecha y las 4 vistas (frente, espalda y ambos perfiles).</span><button class="btn primary sm" data-act="addPhoto" data-pid="${p.id}">Agregar sesión de fotos</button></div>`;
+  const views = PH_VIEWS.filter(v => ph.some(x => x.view === v)).concat([...new Set(ph.map(x => x.view))].filter(v => !PH_VIEWS.includes(v)));
   const v = UI.phView && views.includes(UI.phView) ? UI.phView : views[0];
   const pv = ph.filter(x => x.view === v);
   if (!UI.phCmp || !pv.find(x => x.id === UI.phCmp[0]) || !pv.find(x => x.id === UI.phCmp[1])) UI.phCmp = [pv[0].id, pv[pv.length - 1].id];
   const A = pv.find(x => x.id === UI.phCmp[0]), B = pv.find(x => x.id === UI.phCmp[1]);
+  const dates = [...new Set(ph.map(x => x.date))].sort().reverse();
+  const sessOf = d => { const xs = ph.filter(x => x.date === d); const m = xs.find(x => x.sess)?.sess; return { xs, m }; };
   return `<div class="grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)" id="phGrid"><div class="card"><div class="card-h"><h3>Comparación</h3><div class="pills">${views.map(x => `<button aria-pressed="${x === v}" data-act="phView" data-v="${x}">${x}</button>`).join("")}</div></div>
   ${compareBox(A, B)}<div class="grid g2" style="margin-top:10px"><label class="f">Antes<select class="in sm" data-change="phA">${pv.map(x => `<option value="${x.id}" ${x.id === A.id ? "selected" : ""}>${fmtD(x.date)}</option>`).join("")}</select></label><label class="f">Después<select class="in sm" data-change="phB">${pv.map(x => `<option value="${x.id}" ${x.id === B.id ? "selected" : ""}>${fmtD(x.date)}</option>`).join("")}</select></label></div></div>
-  <div class="card"><div class="card-h"><h3>Galería por sesión</h3><button class="btn sm primary" data-act="addPhoto" data-pid="${p.id}">Agregar fotografía</button></div><div class="photos">${ph.slice().reverse().map(x => `<div><div class="photo">${photoInner(x)}<div class="cap"><span>${fmtDS(x.date)}</span><span>${esc(x.view)}</span></div></div><label class="row" style="gap:6px;font-size:12px;margin-top:6px"><input type="checkbox" data-change="phShare" data-id="${x.id}" ${x.shared ? "checked" : ""}> Visible al paciente</label></div>`).join("")}</div>
-  <p class="hint" style="margin-top:10px">Imágenes ilustrativas generadas para la demo. No cargar fotografías reales de pacientes.</p></div></div><style>@media(max-width:900px){#phGrid{grid-template-columns:minmax(0,1fr)!important}}</style>`;
+  <div class="card"><div class="card-h"><h3>Sesiones de fotos</h3><button class="btn sm primary" data-act="addPhoto" data-pid="${p.id}">Agregar sesión</button></div>
+  <div class="stack" style="gap:18px">${dates.map(d => { const { xs, m } = sessOf(d); return `<div><div class="row between" style="margin-bottom:8px"><b>${fmtD(d)}</b><div class="row" style="gap:6px">${m ? [["Peso", m.weight, "kg"], ["Cintura", m.waist, "cm"], ["Cadera", m.hip, "cm"]].filter(q => q[1]).map(([l, v, u]) => `<span class="chip nodot"><span class="faint">${l}</span> <span class="mono">${n1(v)} ${u}</span></span>`).join("") : ""}</div></div>
+    <div class="chk-photos">${PH_VIEWS.map(vw => { const x = xs.find(q => q.view === vw) || (vw === "Perfil derecho" ? xs.find(q => q.view === "Perfil") : null); return x ? `<div><div class="photo">${photoInner(x)}<div class="cap"><span>${esc(vw)}</span></div></div><label class="row" style="gap:6px;font-size:12px;margin-top:6px"><input type="checkbox" data-change="phShare" data-id="${x.id}" ${x.shared ? "checked" : ""}> Visible al paciente</label></div>` : `<div class="chk-slot"><b>${vw}</b><span>Sin foto</span></div>`; }).join("")}</div></div>`; }).join("")}</div></div></div><style>@media(max-width:900px){#phGrid{grid-template-columns:minmax(0,1fr)!important}}</style>`;
 }
 function compareBox(A, B) {
   return `<div class="cmp" style="--cut:50%" id="cmpBox"><div>${photoInner(A)}</div><div class="after">${photoInner(B)}</div><div class="bar"></div><span class="lbl" style="left:10px">${fmtDS(A.date)}</span><span class="lbl" style="right:10px">${fmtDS(B.date)}</span></div><input type="range" min="0" max="100" value="50" aria-label="Deslizar comparación" data-input="cmpCut" style="margin-top:10px">`;
@@ -1446,20 +1449,38 @@ ACT.phView = d => { UI.phView = d.v; UI.phCmp = null; render(); };
 CHANGES.phA = el => { UI.phCmp[0] = el.value; render(); };
 CHANGES.phB = el => { UI.phCmp[1] = el.value; render(); };
 CHANGES.phShare = el => { const x = S.photos.find(q => q.id === el.dataset.id); x.shared = el.checked; save(); toast(el.checked ? "Foto visible para el paciente" : "Foto oculta para el paciente"); };
-ACT.addPhoto = d => {
-  const p = pat(d.pid), cs = consultsOf(p.id), last = cs[cs.length - 1];
-  modal("Agregar fotografía de evolución", `<div class="note-demo"><b>Solo imágenes ficticias.</b> Genera una ilustración de muestra o carga una imagen de prueba que no sea de una persona real.</div>
-  <div class="grid g3"><label class="f">Fecha<input class="in" type="date" id="ap-date" value="${TODAY}"></label><label class="f">Vista<select class="in" id="ap-view"><option>Frente</option><option>Perfil</option><option>Espalda</option></select></label><label class="f">Cintura para ilustración (cm)<input class="in" type="number" id="ap-waist" step="0.5" value="${last ? Math.max(55, last.m.waist - 1.5) : 80}"></label></div>
-  <label class="f">O cargar imagen de prueba (opcional)<input class="in" type="file" id="ap-file" accept="image/*"></label><div id="ap-prev"></div>`, `<button class="btn line" data-act="closeModal">Cancelar</button><button class="btn primary" data-act="addPhotoOk" data-pid="${p.id}">Guardar fotografía</button>`);
-  $("#ap-file").addEventListener("change", async e => { const f = e.target.files[0]; if (!f) return; UI.upImg = await shrink(f, 360); $("#ap-prev").innerHTML = `<div class="photo" style="max-width:140px"><img src="${UI.upImg}" alt="Vista previa"></div>`; });
-  UI.upImg = null;
+ACT.addPhoto = d => { UI.phUp = { pid: d.pid, imgs: {} }; drawPhotoModal(); };
+function drawPhotoModal(keep) {
+  const U = UI.phUp, p = pat(U.pid), cs = consultsOf(p.id), last = cs[cs.length - 1]?.m || {};
+  const v = keep || { date: TODAY, weight: last.weight ?? "", waist: last.waist ?? "", hip: last.hip ?? "" };
+  modal("Agregar sesión de fotos", `<p class="muted" style="font-size:13.5px">${esc(p.name)} · elige la fecha de la sesión, registra las medidas y sube una foto por cada vista.</p>
+  <div class="grid g4"><label class="f">Fecha<input class="in" type="date" id="ap-date" value="${v.date}" max="${TODAY}"></label><label class="f">Peso (kg)<input class="in mono" type="number" step="0.1" id="ap-weight" value="${v.weight}"></label><label class="f">Cintura (cm)<input class="in mono" type="number" step="0.1" id="ap-waist" value="${v.waist}"></label><label class="f">Cadera (cm)<input class="in mono" type="number" step="0.1" id="ap-hip" value="${v.hip}"></label></div>
+  <div class="chk-photos">${PH_VIEWS.map(vw => { const src = U.imgs[vw]; return src ? `<div><div class="photo"><img src="${src}" alt="${vw}"><div class="cap"><span>${vw}</span></div></div><div class="row" style="gap:6px;margin-top:6px"><label class="btn xs line" style="position:relative;overflow:hidden">Cambiar<input type="file" accept="image/*" class="ap-file" data-v="${vw}" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label><button class="btn xs quiet" data-act="apDel" data-v="${vw}">Quitar</button></div></div>` : `<label class="chk-slot" style="cursor:pointer;position:relative"><b>${vw}</b><span>Toca para subir</span><input type="file" accept="image/*" class="ap-file" data-v="${vw}" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>`; }).join("")}</div>
+  <p class="hint">Una foto por vista. Se aceptan fechas anteriores para cargar el historial. En la demo usa imágenes de prueba.</p>
+  <div class="err" id="apErr"></div>`, `<button class="btn line" data-act="closeModal">Cancelar</button><button class="btn primary" data-act="addPhotoOk">Guardar sesión</button>`, "wide");
+}
+const apVals = () => ({ date: $("#ap-date").value, weight: $("#ap-weight").value, waist: $("#ap-waist").value, hip: $("#ap-hip").value });
+document.addEventListener("change", async e => {
+  if (!e.target.classList || !e.target.classList.contains("ap-file")) return; const f = e.target.files[0]; if (!f) return;
+  const keep = apVals(), src = await shrink(f, 480); if (!src) { toast("No se pudo leer la imagen", false); return; }
+  UI.phUp.imgs[e.target.dataset.v] = src; drawPhotoModal(keep);
+});
+ACT.apDel = d => { const keep = apVals(); delete UI.phUp.imgs[d.v]; drawPhotoModal(keep); };
+ACT.addPhotoOk = (d, el, e, force) => {
+  const U = UI.phUp, p = pat(U.pid), v = apVals(), err = [];
+  if (!v.date) err.push("Elige la fecha de la sesión."); else if (v.date > TODAY) err.push("La fecha no puede ser futura.");
+  const miss = PH_VIEWS.filter(x => !U.imgs[x]); if (miss.length) err.push(`Falta la foto de: ${miss.join(", ").toLowerCase()}.`);
+  if (!(+v.waist > 30)) err.push("Registra la cintura.");
+  if (err.length) { $("#apErr").textContent = err.join(" "); return; }
+  const exists = S.photos.filter(x => x.pid === p.id && x.date === v.date);
+  if (exists.length && !force) { $("#apErr").innerHTML = `Ya hay ${exists.length} fotos el ${fmtD(v.date)}. <button class="btn xs danger" data-act="addPhotoReplace">Reemplazarlas</button>`; return; }
+  if (exists.length) S.photos = S.photos.filter(x => !(x.pid === p.id && x.date === v.date));
+  const sess = { weight: +v.weight || "", waist: +v.waist, hip: +v.hip || "" }, cid = consultsOf(p.id).filter(c => c.date <= v.date).slice(-1)[0]?.id;
+  PH_VIEWS.forEach(vw => S.photos.push({ id: uid("ph"), pid: p.id, cid, date: v.date, view: vw, kind: "img", src: U.imgs[vw], shared: true, waist: sess.waist, hip: sess.hip, sess }));
+  UI.phUp = null; closeModal(true); UI.fTab = "fotos"; UI.phView = "Frente"; UI.phCmp = null;
+  commit(`Sesión de fotos del ${fmtD(v.date)} agregada a ${p.name}`); toast("Sesión de fotos guardada");
 };
-ACT.addPhotoOk = d => {
-  const p = pat(d.pid), cs = consultsOf(p.id), last = cs[cs.length - 1], date = $("#ap-date").value || TODAY, view = $("#ap-view").value === "Espalda" ? "Frente" : $("#ap-view").value;
-  const w = +$("#ap-waist").value || 80;
-  const ph = UI.upImg ? { id: uid("ph"), pid: p.id, cid: last?.id, date, view: $("#ap-view").value, kind: "img", src: UI.upImg, shared: true } : { id: uid("ph"), pid: p.id, cid: last?.id, date, view, kind: "gen", waist: w, hip: last ? last.m.hip - 0.8 : w + 20, shared: true };
-  S.photos.push(ph); UI.upImg = null; closeModal(true); UI.fTab = "fotos"; UI.phView = ph.view; UI.phCmp = null; commit(`Fotografía de evolución agregada a ${p.name}`); toast("Fotografía agregada");
-};
+ACT.addPhotoReplace = () => ACT.addPhotoOk({}, null, null, true);
 function shrink(file, max) {
   return new Promise(res => { const r = new FileReader(); r.onload = () => { const img = new Image(); img.onload = () => { const k = Math.min(1, max / img.width); const c = document.createElement("canvas"); c.width = img.width * k; c.height = img.height * k; c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); res(c.toDataURL("image/jpeg", .75)); }; img.onerror = () => res(null); img.src = r.result; }; r.readAsDataURL(file); });
 }
@@ -1574,7 +1595,7 @@ FORMS.newConsult = v => {
   const c = { id: uid("c"), pid: p.id, aid: v.aid || null, date: v.date || TODAY, type: v.type, motive: v.motive, notes: v.notes, inbodyNotes: v.inbodyNotes, m: { weight: +v.weight, height: +v.height, bmi: bmi(+v.weight, +v.height), fat: num("fat"), muscle: num("muscle"), waist: num("waist"), hip: num("hip"), arm: num("arm"), thigh: num("thigh"), neck: num("neck"), calf: num("calf"), visceral: num("visceral"), water: num("water"), bmr: num("bmr"), source: v.source } };
   S.consults.push(c); if (!p.height) p.height = +v.height; if (p.status === "nuevo") p.status = "activo";
   if (v.aid) { const a = S.appts.find(x => x.id === v.aid); if (a) a.status = "completada"; }
-  if (v.photos && c.m.waist) ["Frente", "Perfil"].forEach(view => S.photos.push({ id: uid("ph"), pid: p.id, cid: c.id, date: c.date, view, kind: "gen", waist: c.m.waist, hip: c.m.hip || c.m.waist + 20, shared: true }));
+  if (v.photos && c.m.waist) ["Frente", "Espalda", "Perfil derecho", "Perfil izquierdo"].forEach(view => S.photos.push({ id: uid("ph"), pid: p.id, cid: c.id, date: c.date, view, kind: "gen", waist: c.m.waist, hip: c.m.hip || c.m.waist + 20, shared: true }));
   if (v.lab) S.labs.push({ id: uid("l"), pid: p.id, date: c.date, type: "Perfil lipídico", file: "perfil_lipidico_muestra.pdf", status: "revision", shared: false, notes: "Muestra ficticia adjunta en consulta.", items: [["Colesterol total", "182", "mg/dL", "< 200"], ["HDL", "56", "mg/dL", "> 50"], ["LDL", "104", "mg/dL", "< 130"], ["Triglicéridos", "112", "mg/dL", "< 150"]] });
   UI.sel = p.id; UI.fTab = "mediciones"; UI.cmp = null; closeModal(true);
   commit(`Consulta registrada: ${p.name} (${c.type}, ${n1(c.m.weight)} kg)`); toast("Consulta y mediciones guardadas"); go("pro-ficha");
